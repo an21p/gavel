@@ -9,6 +9,7 @@ defmodule Gavel.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      docs: docs(),
       test_coverage: [tool: ExCoveralls],
       dialyzer: [plt_add_apps: [:ex_unit]]
     ]
@@ -30,6 +31,25 @@ defmodule Gavel.MixProject do
   end
 
   # Run "mix help deps" to learn about dependencies.
+  defp docs do
+    [
+      main: "Gavel",
+      extras: ["README.md", "docs/design.md"],
+      groups_for_modules: [
+        Core: [Gavel.Auction, Gavel.Bid, Gavel.Type],
+        Formats: [
+          Gavel.Types.English,
+          Gavel.Types.Dutch,
+          Gavel.Types.Vickrey,
+          Gavel.Types.SealedFirstPrice,
+          Gavel.Types.Reverse,
+          Gavel.Types.Japanese
+        ],
+        Runtime: [Gavel, Gavel.Server, Gavel.Store, Gavel.Store.ETS, Gavel.Store.DETS]
+      ]
+    ]
+  end
+
   defp deps do
     [
       {:decimal, "~> 2.0"},

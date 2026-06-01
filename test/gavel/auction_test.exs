@@ -11,9 +11,12 @@ defmodule Gavel.AuctionTest do
     def validate_config(%{bad: true}), do: {:error, :bad_config}
     def validate_config(_), do: :ok
     @impl true
-    def place_bid(auction, bid, _now), do: {:ok, Auction.put_bid(auction, bid), [{:bid_placed, %{bid: bid}}]}
+    def place_bid(auction, bid, _now),
+      do: {:ok, Auction.put_bid(auction, bid), [{:bid_placed, %{bid: bid}}]}
+
     @impl true
-    def resolve(auction, _now), do: {:ok, %{auction | result: :no_sale}, [{:closed, %{result: :no_sale}}]}
+    def resolve(auction, _now),
+      do: {:ok, %{auction | result: :no_sale}, [{:closed, %{result: :no_sale}}]}
   end
 
   defmodule SealedStub do
@@ -58,7 +61,11 @@ defmodule Gavel.AuctionTest do
 
   test "dump/1 then load/1 round-trips a struct with bids" do
     {:ok, auction} = Auction.new(%{id: "a1", type: StubType})
-    auction = auction |> Auction.open(@now) |> Auction.put_bid(Bid.new(bidder: 1, amount: "5", placed_at: @now))
+
+    auction =
+      auction
+      |> Auction.open(@now)
+      |> Auction.put_bid(Bid.new(bidder: 1, amount: "5", placed_at: @now))
 
     reloaded = auction |> Auction.dump() |> Auction.load()
 

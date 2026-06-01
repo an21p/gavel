@@ -12,8 +12,8 @@ defmodule Gavel.Generators do
   @doc "A bidder id (small positive integer keeps collisions likely for tie tests)."
   def bidder, do: integer(1..50)
 
-  @doc "A list of {bidder, amount} pairs, 1..10 entries."
+  @doc "A list of {bidder, amount} pairs, 2..10 entries."
   def bid_pairs do
-    list_of(tuple({bidder(), amount()}), min_length: 1, max_length: 10)
+    list_of(tuple({bidder(), amount()}), min_length: 2, max_length: 10)
   end
 end

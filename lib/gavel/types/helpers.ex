@@ -45,7 +45,9 @@ defmodule Gavel.Types.Helpers do
 
   @doc "`true` when a winning amount clears the reserve (no reserve ⇒ always true)."
   def clears_reserve?(_amount, nil), do: true
-  def clears_reserve?(%Decimal{} = amount, %Decimal{} = reserve), do: Decimal.compare(amount, reserve) != :lt
+
+  def clears_reserve?(%Decimal{} = amount, %Decimal{} = reserve),
+    do: Decimal.compare(amount, reserve) != :lt
 
   @doc """
   Applies anti-snipe: if `now` is within the config window of `closes_at`, push

@@ -114,11 +114,21 @@ defmodule Gavel.Auction do
   # --- dump/load helpers: every Decimal becomes a string and back ---
 
   defp dump_bid(%Bid{} = b) do
-    %{bidder: b.bidder, amount: dec(b.amount), max_amount: dec(b.max_amount), placed_at: dump_dt(b.placed_at)}
+    %{
+      bidder: b.bidder,
+      amount: dec(b.amount),
+      max_amount: dec(b.max_amount),
+      placed_at: dump_dt(b.placed_at)
+    }
   end
 
   defp load_bid(%{} = m) do
-    Bid.new(bidder: m.bidder, amount: m.amount, max_amount: m.max_amount, placed_at: load_dt(m.placed_at))
+    Bid.new(
+      bidder: m.bidder,
+      amount: m.amount,
+      max_amount: m.max_amount,
+      placed_at: load_dt(m.placed_at)
+    )
   end
 
   defp dump_config(config), do: Map.new(config, fn {k, v} -> {k, dump_val(v)} end)

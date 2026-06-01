@@ -24,7 +24,7 @@ defmodule Gavel.Store.DETS do
   @impl true
   def save(id, dumped) do
     :ok = :dets.insert(@table, {id, dumped})
-    :dets.sync(@table)
+    :ok = :dets.sync(@table)
   end
 
   @impl true

@@ -64,18 +64,19 @@ defmodule Gavel.Types.Dutch do
   ```
   """
   @behaviour Gavel.Type
+  @behaviour Gavel.Type.Clock
 
   alias Gavel.{Auction, Bid}
   alias Gavel.Types.Helpers
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Returns `:clock`, indicating this auction is driven by a descending price
   timer rather than competitive open bidding.
   """
   def kind, do: :clock
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Validates that `:start_price`, `:floor_price`, and `:decrement` are all
   `Decimal` structs, and that `floor_price` does not exceed `start_price`.
@@ -120,12 +121,13 @@ defmodule Gavel.Types.Dutch do
 
   Returns the updated auction struct with `extra.price` set.
   """
+  @impl Gavel.Type.Clock
   @spec start_clock(Gavel.Auction.t()) :: Gavel.Auction.t()
   def start_clock(%Auction{config: config} = auction) do
     %{auction | extra: Map.put(auction.extra, :price, config.start_price)}
   end
 
-  @impl true
+  @impl Gavel.Type.Clock
   @doc """
   Advances the clock by subtracting `:decrement` from the current price.
 
@@ -142,7 +144,7 @@ defmodule Gavel.Types.Dutch do
     {:ok, auction, [{:price_dropped, %{price: next}}]}
   end
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Accepts the current clock price on behalf of `bid.bidder`, closing the
   auction immediately.
@@ -162,7 +164,7 @@ defmodule Gavel.Types.Dutch do
     end
   end
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Closes an auction that reached the floor price with no takers.
 

@@ -56,7 +56,7 @@ defmodule Gavel.MixProject do
       source_url: @source_url,
       extras: ["README.md", "docs/design.md", "LICENSE"],
       groups_for_modules: [
-        Core: [Gavel.Auction, Gavel.Bid, Gavel.Type],
+        Core: [Gavel.Auction, Gavel.Bid, Gavel.Type, Gavel.Type.Clock],
         Formats: [
           Gavel.Types.English,
           Gavel.Types.Dutch,

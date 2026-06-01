@@ -296,12 +296,13 @@ defmodule Gavel.Server do
     end
   end
 
+  # Clock formats implement `Gavel.Type.Clock`, so `start_clock/1` is guaranteed
+  # for any `:clock` kind. Skip on rehydrate, when `extra` is already populated.
   defp maybe_start_clock(%Auction{type: type, extra: extra} = auction) do
-    cond do
-      type.kind() != :clock -> auction
-      map_size(extra) > 0 -> auction
-      function_exported?(type, :start_clock, 1) -> type.start_clock(auction)
-      true -> auction
+    if type.kind() == :clock and map_size(extra) == 0 do
+      type.start_clock(auction)
+    else
+      auction
     end
   end
 

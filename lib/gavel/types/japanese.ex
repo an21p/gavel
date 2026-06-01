@@ -75,18 +75,19 @@ defmodule Gavel.Types.Japanese do
   ```
   """
   @behaviour Gavel.Type
+  @behaviour Gavel.Type.Clock
 
   alias Gavel.{Auction, Bid}
   alias Gavel.Types.Helpers
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Returns `:clock`, indicating this auction is driven by an ascending price
   timer and requires `start_clock/1` before accepting bids.
   """
   def kind, do: :clock
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Validates that `:start_price` and `:increment` are both `Decimal` structs.
 
@@ -125,12 +126,13 @@ defmodule Gavel.Types.Japanese do
 
   Returns the updated auction struct.
   """
+  @impl Gavel.Type.Clock
   @spec start_clock(Gavel.Auction.t()) :: Gavel.Auction.t()
   def start_clock(%Auction{config: config} = auction) do
     %{auction | extra: %{price: config.start_price, active: MapSet.new()}}
   end
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Adds a bidder to the active set, confirming their participation at the
   current clock price.
@@ -160,7 +162,7 @@ defmodule Gavel.Types.Japanese do
     end
   end
 
-  @impl true
+  @impl Gavel.Type.Clock
   @doc """
   Advances the clock by adding `:increment` to the current price.
 
@@ -175,7 +177,7 @@ defmodule Gavel.Types.Japanese do
     {:ok, %{auction | extra: %{auction.extra | price: next}}, [{:price_raised, %{price: next}}]}
   end
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Removes a bidder from the active set.
 
@@ -201,7 +203,7 @@ defmodule Gavel.Types.Japanese do
     end
   end
 
-  @impl true
+  @impl Gavel.Type
   @doc """
   Settles the auction when called explicitly (e.g. after all ticks are
   exhausted).

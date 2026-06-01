@@ -17,9 +17,11 @@ defmodule Gavel.Type do
     * `:sealed` — bids are hidden until the auction closes; the `:phase` field
                   on `Gavel.Auction` tracks the current sub-state (e.g. Vickrey,
                   sealed-first-price, reverse auctions).
-    * `:clock`  — the auction price moves on a timer driven by periodic `:tick`
-                  messages; the optional `tick/2` and `drop_out/3` callbacks are
-                  used (e.g. Dutch descending-clock, Japanese ascending-clock).
+    * `:clock`  — the auction price moves on a timer; these formats additionally
+                  implement the `Gavel.Type.Clock` behaviour (`start_clock/1` +
+                  `tick/2`), e.g. Dutch descending-clock and Japanese
+                  ascending-clock. Japanese also implements the optional
+                  `drop_out/3` callback below.
 
   ## Return shapes
 
@@ -34,9 +36,9 @@ defmodule Gavel.Type do
 
   ## Optional callbacks
 
-  `tick/2` and `drop_out/3` are optional (`@optional_callbacks`).  Only `:clock`
-  types are expected to implement them; the server checks `function_exported?`
-  before calling.
+  `drop_out/3` is optional (`@optional_callbacks`) — only Japanese implements it.
+  The price-clock callbacks live in the separate `Gavel.Type.Clock` behaviour,
+  which `:clock` formats implement in addition to this one.
   """
 
   alias Gavel.{Auction, Bid}
@@ -86,12 +88,9 @@ defmodule Gavel.Type do
   """
   @callback resolve(Auction.t(), now :: DateTime.t()) :: {:ok, Auction.t(), events()}
 
-  @doc "Advance a clock-driven auction. Only `:clock` types implement this."
-  @callback tick(Auction.t(), now :: DateTime.t()) :: {:ok, Auction.t(), events()}
-
   @doc "Withdraw a bidder. Only Japanese implements this."
   @callback drop_out(Auction.t(), bidder :: term(), now :: DateTime.t()) ::
               {:ok, Auction.t(), events()} | {:error, term()}
 
-  @optional_callbacks tick: 2, drop_out: 3
+  @optional_callbacks drop_out: 3
 end

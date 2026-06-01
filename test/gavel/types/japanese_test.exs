@@ -63,4 +63,17 @@ defmodule Gavel.Types.JapaneseTest do
     {:ok, a, _} = Japanese.resolve(japanese(), @now)
     assert a.result == :no_sale
   end
+
+  test "rejects :reserve_price as an unsupported option (Japanese has no reserve)" do
+    config = %{
+      id: "j_reserve",
+      type: Japanese,
+      start_price: Decimal.new(10),
+      increment: Decimal.new(5),
+      reserve_price: Decimal.new(20)
+    }
+
+    assert {:error, :unsupported_option} = Auction.new(config)
+    assert {:error, :unsupported_option} = Japanese.validate_config(config)
+  end
 end

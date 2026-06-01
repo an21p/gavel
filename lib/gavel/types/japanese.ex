@@ -90,14 +90,26 @@ defmodule Gavel.Types.Japanese do
   @doc """
   Validates that `:start_price` and `:increment` are both `Decimal` structs.
 
-  Returns `:ok` on success, or `{:error, :missing_clock_config}` if either
-  key is absent or not a `Decimal`.
+  Returns `:ok` on success, or one of:
+
+  - `{:error, :unsupported_option}` — `:reserve_price` was supplied. Japanese
+    auctions have no reserve; the seller's floor is `:start_price` (bidding
+    begins there). This is rejected rather than silently ignored.
+  - `{:error, :missing_clock_config}` — `:start_price` or `:increment` is
+    absent or not a `Decimal`.
   """
   def validate_config(config) do
-    if match?(%Decimal{}, Map.get(config, :start_price)) and
-         match?(%Decimal{}, Map.get(config, :increment)),
-       do: :ok,
-       else: {:error, :missing_clock_config}
+    cond do
+      Map.has_key?(config, :reserve_price) ->
+        {:error, :unsupported_option}
+
+      match?(%Decimal{}, Map.get(config, :start_price)) and
+          match?(%Decimal{}, Map.get(config, :increment)) ->
+        :ok
+
+      true ->
+        {:error, :missing_clock_config}
+    end
   end
 
   @doc """

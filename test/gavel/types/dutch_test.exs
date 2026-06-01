@@ -60,4 +60,18 @@ defmodule Gavel.Types.DutchTest do
     {:ok, a, _} = Dutch.resolve(dutch(), @now)
     assert a.result == :no_sale
   end
+
+  test "rejects :reserve_price as an unsupported option (Dutch uses :floor_price)" do
+    config = %{
+      id: "d_reserve",
+      type: Dutch,
+      start_price: Decimal.new(100),
+      floor_price: Decimal.new(50),
+      decrement: Decimal.new(10),
+      reserve_price: Decimal.new(60)
+    }
+
+    assert {:error, :unsupported_option} = Auction.new(config)
+    assert {:error, :unsupported_option} = Dutch.validate_config(config)
+  end
 end

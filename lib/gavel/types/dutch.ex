@@ -82,6 +82,9 @@ defmodule Gavel.Types.Dutch do
 
   Returns `:ok` on success, or one of:
 
+  - `{:error, :unsupported_option}` — `:reserve_price` was supplied. Dutch
+    auctions have no reserve; the seller's floor is `:floor_price` (the clock
+    never descends below it). This is rejected rather than silently ignored.
   - `{:error, :missing_clock_config}` — one or more required keys are absent
     or are not `Decimal` values.
   - `{:error, :floor_above_start}` — `floor_price > start_price`.
@@ -90,6 +93,9 @@ defmodule Gavel.Types.Dutch do
     required = [:start_price, :floor_price, :decrement]
 
     cond do
+      Map.has_key?(config, :reserve_price) ->
+        {:error, :unsupported_option}
+
       Enum.any?(required, fn key -> not match?(%Decimal{}, Map.get(config, key)) end) ->
         {:error, :missing_clock_config}
 

@@ -22,7 +22,7 @@ defmodule Gavel do
   {:ok, _pid} = Gavel.start_auction(%{
     id: "lot-42",
     type: Gavel.Types.English,
-    reserve: Decimal.new("100.00"),
+    reserve_price: Decimal.new("100.00"),
     closes_at: DateTime.add(DateTime.utc_now(), 3600, :second)
   })
 
@@ -51,8 +51,8 @@ defmodule Gavel do
     * `:type` — a module implementing `Gavel.Type` (e.g. `Gavel.Types.English`).
 
   Any additional keys are forwarded to the type's `validate_config/1` callback
-  (see the specific `Gavel.Types.*` module for required keys such as `:reserve`,
-  `:closes_at`, or `:tick_interval_ms`).
+  (see the specific `Gavel.Types.*` module for required keys such as
+  `:reserve_price`, `:closes_at`, or `:tick_interval_ms`).
 
   Returns `{:ok, pid}` on success or `{:error, reason}` from
   `DynamicSupervisor.start_child/2` if the process cannot be registered (e.g.
@@ -105,8 +105,10 @@ defmodule Gavel do
   Accepts the current clock price in a Dutch auction.
 
   Signals the bidder's willingness to buy at whatever price the descending clock
-  currently shows.  Only meaningful for `Gavel.Types.Dutch`; other formats will
-  return `{:error, :not_supported}` or similar.
+  currently shows.  Implemented as a bid with `amount: 0`; only `Gavel.Types.Dutch`
+  treats it as an acceptance at the current clock price.  Other formats receive it
+  as an ordinary (zero-amount) bid and will typically reject it (e.g.
+  `{:error, :bid_too_low}`), so use this only on Dutch auctions.
 
   Returns `{:ok, %Gavel.Auction{}}` or `{:error, reason}`.
   """

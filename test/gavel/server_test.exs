@@ -56,4 +56,29 @@ defmodule Gavel.ServerTest do
     auction = Server.get(pid2)
     assert [%{bidder: 1}] = auction.bids
   end
+
+  test "an anti-snipe bid re-arms the close timer so the auction outlives its original deadline" do
+    now = DateTime.utc_now()
+    original_close = DateTime.add(now, 600, :millisecond)
+
+    {:ok, auction} =
+      Auction.new(%{
+        id: "srv6",
+        type: Gavel.Types.English,
+        min_increment: Decimal.new(1),
+        closes_at: original_close,
+        anti_snipe: %{window: 10, extend_by: 30}
+      })
+
+    {:ok, pid} = Server.start_link(auction: Auction.open(auction, now))
+
+    # Bid lands well inside the 10s window, so closes_at is pushed out by 30s.
+    {:ok, bid_state} = Server.place_bid(pid, bidder: 1, amount: "10")
+    assert DateTime.compare(bid_state.closes_at, original_close) == :gt
+
+    # Wait past the ORIGINAL deadline. If the stale timer were still armed the
+    # auction would already be closed; the re-armed timer must keep it open.
+    Process.sleep(900)
+    assert Server.get(pid).status == :open
+  end
 end

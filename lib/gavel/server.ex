@@ -257,7 +257,31 @@ defmodule Gavel.Server do
     store().save(auction.id, Auction.dump(auction))
     Enum.each(events, &broadcast(auction.id, &1))
     state = %{state | auction: auction}
-    if auction.status == :closed, do: cancel_timers(state), else: state
+
+    cond do
+      auction.status == :closed -> cancel_timers(state)
+      extended?(events) -> reschedule_close(state)
+      true -> state
+    end
+  end
+
+  defp extended?(events), do: Enum.any?(events, fn {name, _payload} -> name == :extended end)
+
+  # Anti-snipe pushed `closes_at` out: cancel the stale close timer and re-arm
+  # from the new deadline so the auction actually stays open.
+  defp reschedule_close(state) do
+    state |> cancel_close_timer() |> schedule_close()
+  end
+
+  defp cancel_close_timer(state) do
+    case Map.pop(state.timers, :close) do
+      {nil, _timers} ->
+        state
+
+      {ref, timers} ->
+        Process.cancel_timer(ref)
+        %{state | timers: timers}
+    end
   end
 
   defp cancel_timers(state) do

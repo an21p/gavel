@@ -1,20 +1,18 @@
 defmodule Gavel.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
   @moduledoc false
-
   use Application
 
   @impl true
   def start(_type, _args) do
+    store = Application.get_env(:gavel, :store, Gavel.Store.ETS)
+    store_opts = Application.get_env(:gavel, :store_opts, [])
+    :ok = store.init(store_opts)
+
     children = [
-      # Starts a worker by calling: Gavel.Worker.start_link(arg)
-      # {Gavel.Worker, arg}
+      {Registry, keys: :unique, name: Gavel.Registry},
+      {DynamicSupervisor, name: Gavel.DynamicSupervisor, strategy: :one_for_one}
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Gavel.Supervisor]
-    Supervisor.start_link(children, opts)
+    Supervisor.start_link(children, strategy: :one_for_one, name: Gavel.Supervisor)
   end
 end

@@ -56,3 +56,7 @@ Set a PubSub to receive `{:gavel, auction_id, {event, payload}}` on
     config :gavel, pubsub: MyApp.PubSub
 
 See `docs/design.md` for the full design.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Antonis Pishias.

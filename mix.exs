@@ -1,6 +1,8 @@
 defmodule Gavel.MixProject do
   use Mix.Project
 
+  @source_url "https://github.com/an21p/gavel"
+
   def project do
     [
       app: :gavel,
@@ -8,10 +10,27 @@ defmodule Gavel.MixProject do
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
+      description: description(),
+      package: package(),
+      source_url: @source_url,
       deps: deps(),
       docs: docs(),
       test_coverage: [tool: ExCoveralls],
       dialyzer: [plt_add_apps: [:ex_unit]]
+    ]
+  end
+
+  defp description do
+    "A multi-format auction library for Elixir (English, Dutch, Vickrey, " <>
+      "sealed first-price, reverse, Japanese): a pure functional core plus an " <>
+      "opt-in OTP runtime."
+  end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => @source_url},
+      files: ~w(lib mix.exs README.md LICENSE docs/design.md)
     ]
   end
 
@@ -34,7 +53,8 @@ defmodule Gavel.MixProject do
   defp docs do
     [
       main: "Gavel",
-      extras: ["README.md", "docs/design.md"],
+      source_url: @source_url,
+      extras: ["README.md", "docs/design.md", "LICENSE"],
       groups_for_modules: [
         Core: [Gavel.Auction, Gavel.Bid, Gavel.Type],
         Formats: [

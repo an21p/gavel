@@ -1,17 +1,112 @@
 defmodule Gavel.Types.English do
-  @moduledoc "Open ascending auction: highest bid wins and pays its own bid."
+  @moduledoc """
+  Open ascending auction: the highest bidder at close wins and pays their own
+  bid amount.
+
+  This is the most common auction format. Bids are public and must rise by at
+  least a configurable minimum increment. A proxy (automatic) bidding system
+  is built in: when a bid includes a `max_amount`, the engine automatically
+  advances the visible amount to stay one increment ahead of competitors up to
+  that ceiling.
+
+  ## Config keys
+
+  | Key | Type | Required | Description |
+  |-----|------|----------|-------------|
+  | `:start_price` | `Decimal` | No | Floor for the first visible bid. Defaults to `0`. |
+  | `:min_increment` | `Decimal` | No | Minimum raise over the current price. No increment rule when absent. |
+  | `:reserve_price` | `Decimal` | No | Minimum acceptable winning price. No reserve when absent. |
+  | `:closes_at` | `DateTime` | No | Hard deadline. Required for anti-snipe to function. |
+  | `:anti_snipe` | `%{window: integer, extend_by: integer}` | No | Extend the deadline by `extend_by` seconds when a bid arrives within `window` seconds of `closes_at`. |
+
+  ## Events emitted
+
+  | Event | When |
+  |-------|------|
+  | `{:bid_placed, %{bid: bid}}` | A bid is accepted |
+  | `{:outbid, %{bidder: bidder}}` | The previous leader is displaced |
+  | `{:extended, %{closes_at: new_deadline}}` | Anti-snipe extension fires |
+  | `{:closed, %{result: result}}` | Auction resolves |
+
+  ## Example
+
+  ```elixir
+  now = DateTime.utc_now()
+
+  {:ok, auction} =
+    Gavel.Auction.new(%{
+      type: Gavel.Types.English,
+      start_price: Decimal.new("100"),
+      min_increment: Decimal.new("10"),
+      reserve_price: Decimal.new("150"),
+      closes_at: DateTime.add(now, 3600, :second)
+    })
+
+  auction = Gavel.Auction.open(auction, now)
+
+  bid_alice = Gavel.Bid.new(bidder: :alice, amount: Decimal.new("100"), placed_at: now)
+  {:ok, auction, _events} = Gavel.Types.English.place_bid(auction, bid_alice, now)
+
+  # Proxy bid: Bob's max is 250 but he only leads by one increment for now.
+  bid_bob =
+    Gavel.Bid.new(
+      bidder: :bob,
+      amount: Decimal.new("110"),
+      max_amount: Decimal.new("250"),
+      placed_at: now
+    )
+
+  {:ok, auction, _events} = Gavel.Types.English.place_bid(auction, bid_bob, now)
+
+  {:ok, auction, [{:closed, %{result: result}}]} =
+    Gavel.Types.English.resolve(auction, now)
+
+  # => {:sold, :bob, <winning_amount>}
+  ```
+  """
   @behaviour Gavel.Type
 
   alias Gavel.{Auction, Bid}
   alias Gavel.Types.Helpers
 
   @impl true
+  @doc """
+  Returns `:open`, indicating bids are public and no sealed phase is used.
+  """
   def kind, do: :open
 
   @impl true
+  @doc """
+  Validates the English auction config.
+
+  All config keys are optional for an English auction, so this always returns
+  `:ok`. Validation of individual key types (e.g. ensuring `:min_increment` is
+  a `Decimal`) is left to the caller.
+  """
   def validate_config(_config), do: :ok
 
   @impl true
+  @doc """
+  Places a public bid, enforcing increment rules and triggering anti-snipe.
+
+  The bid is admissible when its ceiling (`:max_amount` for proxy bids, or
+  `:amount` for plain bids) strictly exceeds the current visible price by at
+  least `:min_increment`. On success the engine recomputes all visible amounts
+  via the proxy algorithm so the leaderboard remains consistent.
+
+  ## Events
+
+  On success, always emits `{:bid_placed, %{bid: bid}}`. Additionally emits
+  `{:outbid, %{bidder: previous_leader}}` when the leader changes, and
+  `{:extended, %{closes_at: new_deadline}}` when the anti-snipe rule fires.
+
+  ## Errors
+
+  - `{:error, :auction_closed}` — the auction is not open.
+  - `{:error, :bid_too_low}` — the ceiling does not exceed the current price.
+  - `{:error, :below_min_increment}` — the ceiling exceeds the price but falls
+    short of the minimum increment.
+  """
   def place_bid(%Auction{} = auction, %Bid{} = bid, %DateTime{} = now) do
     with :ok <- Helpers.ensure_open(auction),
          :ok <- check_admissible(auction, bid) do
@@ -29,6 +124,16 @@ defmodule Gavel.Types.English do
   end
 
   @impl true
+  @doc """
+  Closes the auction and determines the winner.
+
+  The highest bidder wins if their visible amount meets or exceeds the reserve
+  price. Returns `:no_sale` when there are no bids or the top bid is below the
+  reserve.
+
+  Always returns `{:ok, closed_auction, [{:closed, %{result: result}}]}` where
+  `result` is `{:sold, bidder, amount}` or `:no_sale`.
+  """
   def resolve(%Auction{} = auction, _now) do
     result =
       case Helpers.highest(auction.bids) do

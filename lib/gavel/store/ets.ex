@@ -1,5 +1,19 @@
 defmodule Gavel.Store.ETS do
-  @moduledoc "Ephemeral ETS-backed store. Survives process restarts, not node restarts."
+  @moduledoc """
+  Ephemeral ETS-backed store. Survives process restarts, not node restarts.
+
+  This is the default store when no `:gavel, :store` application environment
+  key is set. It keeps all auction snapshots in a named public ETS table called
+  `:gavel_auctions`. Because the table is named and public it outlives any
+  individual `Gavel.Server` process — a restarted server can rehydrate from ETS
+  even if it crashed mid-auction.
+
+  Data does **not** survive node restarts or application stops. For durable
+  storage use `Gavel.Store.DETS` or implement a custom `Gavel.Store` adapter.
+
+  No configuration is required. `Gavel.Application` calls `init/1` at boot
+  with an empty options list.
+  """
   @behaviour Gavel.Store
 
   @table :gavel_auctions

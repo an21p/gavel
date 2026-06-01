@@ -1,5 +1,47 @@
 defmodule Gavel.Auction do
-  @moduledoc "The auction state struct and its pure lifecycle functions."
+  @moduledoc """
+  The auction state struct and its pure lifecycle functions.
+
+  `Gavel.Auction` is the central data structure of the Gavel library.  It is a
+  plain Elixir struct with no process or side-effect of its own — all mutations
+  happen through the pure functions in this module, which are called by
+  `Gavel.Server` (the OTP process that owns a live auction) and by the
+  `Gavel.Type` callbacks that implement each auction format.
+
+  ## Lifecycle
+
+  An auction moves through three statuses:
+
+    1. **`:pending`** — created by `new/1` from a raw config map.  The auction
+       has not started yet; no bids are accepted.
+    2. **`:open`** — transitioned by `open/2` once the server starts.  Bids and
+       clock ticks are processed in this state.
+    3. **`:closed`** — set by `c:Gavel.Type.resolve/2` when the auction ends
+       (either at `closes_at` or via `Gavel.close/1`).  The `:result` field is
+       populated.
+
+  ## The `:phase` field
+
+  `:phase` carries format-specific sub-state for `:sealed` auction types.  For
+  example, a Vickrey or sealed-first-price auction uses `:bidding` during the
+  open window and `:reveal` after bids close.  For `:open` and `:clock` formats
+  `:phase` is `nil`.
+
+  ## Persistence — `dump/1` and `load/1`
+
+  `dump/1` serialises an `%Auction{}` to a plain Elixir map suitable for storage
+  in ETS, DETS, or any native-term store (the built-in `Gavel.Store.ETS`
+  backend uses it).  The encoding rules are:
+
+    * `Decimal` values become strings tagged `{:dec, "…"}`.
+    * `DateTime` values become ISO 8601 strings tagged `{:dt, "…"}`.
+    * `MapSet` values become tagged lists `{:set, […]}`.
+    * The `:type` module atom is stored as a string via `Atom.to_string/1`.
+    * Atom tags for `:status`, `:phase`, and `:result` are preserved as-is;
+      a JSON-backed store would need to handle those on the way back in.
+
+  `load/1` is the inverse, restoring a full `%Auction{}` from `dump/1` output.
+  """
 
   alias Gavel.Bid
 
@@ -15,8 +57,35 @@ defmodule Gavel.Auction do
             result: nil,
             extra: %{}
 
+  @typedoc "The current lifecycle status of an auction."
   @type status :: :pending | :open | :closed
+
+  @typedoc """
+  The terminal outcome stored in `:result` once an auction is `:closed`.
+
+  `{:sold, bidder, price}` identifies the winner and clearing price.
+  `:no_sale` means the auction ended without a qualifying bid (e.g. reserve not
+  met).  `nil` while the auction is still `:pending` or `:open`.
+  """
   @type result :: {:sold, term(), Decimal.t()} | :no_sale | nil
+
+  @typedoc """
+  A live or historical auction.
+
+    * `:id` — opaque identifier supplied in the config; used as the registry key
+      and PubSub topic suffix.
+    * `:type` — the `Gavel.Type` implementation module (e.g. `Gavel.Types.English`).
+    * `:status` — see `t:status/0`.
+    * `:phase` — format-specific sub-state; used by `:sealed` types; `nil` otherwise.
+    * `:config` — the raw config map passed to `new/1`, including the `:type` key.
+    * `:bids` — chronological list of `Gavel.Bid` structs.
+    * `:opened_at` — UTC timestamp set by `open/2`; `nil` until then.
+    * `:closes_at` — optional hard deadline; `Gavel.Server` arms a timer to call
+      `resolve/2` at this time.
+    * `:result` — see `t:result/0`.
+    * `:extra` — arbitrary map for type-specific ephemeral state (clock price,
+      participant sets, etc.).
+  """
   @type t :: %__MODULE__{
           id: term(),
           type: module(),
@@ -30,7 +99,22 @@ defmodule Gavel.Auction do
           extra: map()
         }
 
-  @doc "Builds a `:pending` auction from a config map. Returns `{:error, reason}` if the type rejects the config."
+  @doc """
+  Builds a `:pending` auction from a config map.
+
+  The config map must contain at least:
+
+    * `:type` — a module that implements `Gavel.Type`.
+    * `:id` — an opaque identifier for the auction (any term).
+
+  Any additional keys are passed through to the type's `validate_config/1`
+  callback and stored verbatim in `:config`.
+
+  Returns `{:ok, %Gavel.Auction{}}` on success, or `{:error, reason}` if the
+  type's `validate_config/1` rejects the config.  Raises `KeyError` if `:type`
+  is missing from the map.
+  """
+  @spec new(map()) :: {:ok, t()} | {:error, term()}
   def new(config) when is_map(config) do
     type = Map.fetch!(config, :type)
 
@@ -60,26 +144,53 @@ defmodule Gavel.Auction do
     end
   end
 
-  @doc "Transitions a pending auction to `:open`."
+  @doc """
+  Transitions a `:pending` auction to `:open`.
+
+  Sets `:status` to `:open` and records `now` as `:opened_at`.  The auction is
+  ready to receive bids after this call.  Returns the updated `%Gavel.Auction{}`
+  directly (this is a pure struct mutation, not a tagged tuple).
+  """
+  @spec open(t(), DateTime.t()) :: t()
   def open(%__MODULE__{} = auction, %DateTime{} = now) do
     %{auction | status: :open, opened_at: now}
   end
 
-  @doc "Appends a bid (chronological order)."
+  @doc """
+  Appends a bid to the auction's bid list in chronological order.
+
+  Returns the updated `%Gavel.Auction{}`.  This function does not validate the
+  bid — validation is the responsibility of the `c:Gavel.Type.place_bid/3`
+  callback, which calls this function only after confirming the bid is
+  acceptable.
+  """
+  @spec put_bid(t(), Bid.t()) :: t()
   def put_bid(%__MODULE__{} = auction, %Bid{} = bid) do
     %{auction | bids: auction.bids ++ [bid]}
   end
 
-  @doc "Whether the auction is still accepting actions."
+  @doc """
+  Returns `true` if the auction is in the `:open` status, `false` otherwise.
+
+  Use this guard before applying any action (bid, tick, drop-out) to avoid
+  mutating a `:pending` or `:closed` auction.
+  """
+  @spec open?(t()) :: boolean()
   def open?(%__MODULE__{status: :open}), do: true
   def open?(%__MODULE__{}), do: false
 
   @doc """
-  Serialises to a plain map suitable for native-term persistence (the built-in
-  ETS/DETS stores). `Decimal`s and `DateTime`s become strings; `MapSet`s become
-  tagged lists. Status/phase/result tag atoms are preserved as-is, so a JSON-backed
-  store would additionally need to handle those atoms on the way back in.
+  Serialises an auction struct to a plain map for native-term persistence.
+
+  The output is suitable for storage in ETS, DETS, or any store backed by
+  Erlang terms.  All `Decimal` values are encoded as `{:dec, string}` tuples,
+  `DateTime` values as `{:dt, iso8601_string}` tuples, and `MapSet` values as
+  `{:set, list}` tuples.  The `:type` module atom is stored as a string.  Atom
+  tags for `:status`, `:phase`, and `:result` are preserved as-is.
+
+  Pass the return value to `load/1` to reconstruct the struct.
   """
+  @spec dump(t()) :: map()
   def dump(%__MODULE__{} = a) do
     %{
       id: a.id,
@@ -95,7 +206,15 @@ defmodule Gavel.Auction do
     }
   end
 
-  @doc "Rebuilds an `%Auction{}` from `dump/1` output."
+  @doc """
+  Rebuilds a `%Gavel.Auction{}` from the output of `dump/1`.
+
+  Reverses all encoding applied by `dump/1`: `{:dec, s}` → `Decimal`, `{:dt,
+  s}` → `DateTime`, `{:set, list}` → `MapSet`, and the `:type` string →
+  existing atom (via `String.to_existing_atom/1`).  Raises if the type module
+  atom is not already loaded.
+  """
+  @spec load(map()) :: t()
   def load(%{} = m) do
     %__MODULE__{
       id: m.id,

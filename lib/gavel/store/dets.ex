@@ -1,5 +1,39 @@
 defmodule Gavel.Store.DETS do
-  @moduledoc "File-backed DETS store. Single-node durability across node restarts."
+  @moduledoc """
+  File-backed DETS store. Single-node durability across node restarts.
+
+  Auction snapshots are written to a DETS file on disk, so they survive node
+  restarts and application crashes (subject to the last `sync` having completed).
+  This adapter is suitable for single-node deployments that need durability
+  without an external database.
+
+  ## Configuration
+
+  Pass the file path via `:store_opts` in the application environment:
+
+  ```elixir
+  config :gavel,
+    store: Gavel.Store.DETS,
+    store_opts: [path: "/var/lib/myapp/auctions.dets"]
+  ```
+
+  `Gavel.Application` calls `init/1` at boot with these opts. The path is
+  created if it does not already exist (DETS creates the file on first open).
+
+  ## Shutdown
+
+  Call `close/0` before stopping the application to flush any buffered writes.
+  In a supervised application you can do this in a `Supervisor` shutdown hook or
+  `Application.stop/1` callback. Omitting `close/0` is safe but may lose the
+  last write if the node crashes.
+
+  ## Limitations
+
+  DETS is a single-node technology. It cannot be shared across nodes and does
+  not support concurrent writers. For multi-node or high-throughput deployments,
+  implement a `Gavel.Store` adapter backed by Postgres or another distributed
+  store.
+  """
   @behaviour Gavel.Store
 
   @table :gavel_auctions_dets
@@ -18,7 +52,13 @@ defmodule Gavel.Store.DETS do
     :ok
   end
 
-  @doc "Close the DETS file (flushes to disk)."
+  @doc """
+  Close the DETS file, flushing all pending writes to disk.
+
+  Should be called on graceful application shutdown. Idempotent — safe to call
+  even if the file is already closed.
+  """
+  @spec close() :: :ok | {:error, term()}
   def close, do: :dets.close(@table)
 
   @impl true

@@ -74,7 +74,12 @@ defmodule Gavel.Auction do
   def open?(%__MODULE__{status: :open}), do: true
   def open?(%__MODULE__{}), do: false
 
-  @doc "Serialises to a plain map of JSON-friendly terms (Decimals -> strings)."
+  @doc """
+  Serialises to a plain map suitable for native-term persistence (the built-in
+  ETS/DETS stores). `Decimal`s and `DateTime`s become strings; `MapSet`s become
+  tagged lists. Status/phase/result tag atoms are preserved as-is, so a JSON-backed
+  store would additionally need to handle those atoms on the way back in.
+  """
   def dump(%__MODULE__{} = a) do
     %{
       id: a.id,
@@ -117,10 +122,10 @@ defmodule Gavel.Auction do
   end
 
   defp dump_config(config), do: Map.new(config, fn {k, v} -> {k, dump_val(v)} end)
-  defp load_config(config), do: Map.new(config, fn {k, v} -> {k, load_val(k, v)} end)
+  defp load_config(config), do: Map.new(config, fn {k, v} -> {k, load_config_val(k, v)} end)
 
   defp dump_extra(extra), do: Map.new(extra, fn {k, v} -> {k, dump_val(v)} end)
-  defp load_extra(extra), do: Map.new(extra, fn {k, v} -> {k, load_val(k, v)} end)
+  defp load_extra(extra), do: Map.new(extra, fn {k, v} -> {k, load_decoded_val(v)} end)
 
   # config/extra values may be Decimals, atoms, DateTimes, MapSets, plain terms.
   defp dump_val(%Decimal{} = d), do: {:dec, dec(d)}
@@ -129,14 +134,16 @@ defmodule Gavel.Auction do
   defp dump_val(other), do: other
 
   # The :type key in config holds a module atom. dump_val passes it through unchanged
-  # (via the catch-all), so load_val must handle both the atom case (round-trip from
+  # (via the catch-all), so load_config_val must handle both the atom case (round-trip from
   # in-memory dump) and the string case (load from JSON storage where it would be a string).
-  defp load_val(:type, v) when is_atom(v), do: v
-  defp load_val(:type, v) when is_binary(v), do: String.to_existing_atom(v)
-  defp load_val(_k, {:dec, s}), do: Decimal.new(s)
-  defp load_val(_k, {:dt, s}), do: load_dt(s)
-  defp load_val(_k, {:set, list}), do: MapSet.new(list)
-  defp load_val(_k, other), do: other
+  defp load_config_val(:type, v) when is_atom(v), do: v
+  defp load_config_val(:type, v) when is_binary(v), do: String.to_existing_atom(v)
+  defp load_config_val(_k, v), do: load_decoded_val(v)
+
+  defp load_decoded_val({:dec, s}), do: Decimal.new(s)
+  defp load_decoded_val({:dt, s}), do: load_dt(s)
+  defp load_decoded_val({:set, list}), do: MapSet.new(list)
+  defp load_decoded_val(other), do: other
 
   defp dump_result({:sold, bidder, price}), do: {:sold, bidder, dec(price)}
   defp dump_result(other), do: other

@@ -16,6 +16,18 @@ defmodule Gavel.AuctionTest do
     def resolve(auction, _now), do: {:ok, %{auction | result: :no_sale}, [{:closed, %{result: :no_sale}}]}
   end
 
+  defmodule SealedStub do
+    @behaviour Gavel.Type
+    @impl true
+    def kind, do: :sealed
+    @impl true
+    def validate_config(_), do: :ok
+    @impl true
+    def place_bid(auction, bid, _now), do: {:ok, Auction.put_bid(auction, bid), []}
+    @impl true
+    def resolve(auction, _now), do: {:ok, auction, []}
+  end
+
   @now ~U[2026-06-01 12:00:00Z]
 
   test "new/1 builds a pending auction" do
@@ -54,5 +66,33 @@ defmodule Gavel.AuctionTest do
     assert reloaded.status == :open
     assert [%Bid{bidder: 1}] = reloaded.bids
     assert Decimal.equal?(hd(reloaded.bids).amount, Decimal.new(5))
+  end
+
+  test "new/1 sets phase :bidding for sealed types" do
+    assert {:ok, %Auction{phase: :bidding}} = Auction.new(%{id: "s1", type: SealedStub})
+  end
+
+  test "open?/1 reflects status" do
+    {:ok, auction} = Auction.new(%{id: "a1", type: StubType})
+    refute Auction.open?(auction)
+    assert Auction.open?(Auction.open(auction, @now))
+  end
+
+  test "dump/1 then load/1 round-trips extra (MapSet + Decimal), phase, and a sold result" do
+    {:ok, auction} = Auction.new(%{id: "s1", type: SealedStub})
+
+    auction = %{
+      auction
+      | extra: %{price: Decimal.new("12.50"), active: MapSet.new([1, 2, 3])},
+        result: {:sold, 2, Decimal.new("12.50")}
+    }
+
+    reloaded = auction |> Auction.dump() |> Auction.load()
+
+    assert reloaded.phase == :bidding
+    assert Decimal.equal?(reloaded.extra.price, Decimal.new("12.50"))
+    assert MapSet.equal?(reloaded.extra.active, MapSet.new([1, 2, 3]))
+    assert {:sold, 2, price} = reloaded.result
+    assert Decimal.equal?(price, Decimal.new("12.50"))
   end
 end

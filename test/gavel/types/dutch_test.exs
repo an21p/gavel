@@ -86,4 +86,18 @@ defmodule Gavel.Types.DutchTest do
     assert {:error, :unsupported_option} = Auction.new(config)
     assert {:error, :unsupported_option} = Dutch.validate_config(config)
   end
+
+  test "tick on an already-closed auction is a no-op" do
+    # Drive it to the floor so it closes, then tick again.
+    closed =
+      Enum.reduce(1..5, dutch(), fn _, acc ->
+        {:ok, acc, _} = Dutch.tick(acc, @now)
+        acc
+      end)
+
+    assert closed.status == :closed
+    assert closed.result == :no_sale
+
+    assert {:ok, ^closed, []} = Dutch.tick(closed, @now)
+  end
 end

@@ -17,6 +17,33 @@ defmodule Gavel.ServerTest do
     pid
   end
 
+  defp start_dutch(id) do
+    {:ok, auction} =
+      Auction.new(%{
+        id: id,
+        type: Gavel.Types.Dutch,
+        start_price: Decimal.new(100),
+        floor_price: Decimal.new(50),
+        decrement: Decimal.new(50),
+        tick_interval_ms: 20
+      })
+
+    {:ok, pid} = Server.start_link(auction: Auction.open(auction, DateTime.utc_now()))
+    pid
+  end
+
+  test "a Dutch clock that reaches the floor with no taker resolves to no_sale" do
+    pid = start_dutch("srv_dutch_floor")
+
+    # Clock: 100 -> 50 (floor, one tick) -> 50 (stalled tick closes). At 20ms a
+    # tick, this is well settled within 300ms.
+    Process.sleep(300)
+
+    auction = Server.get(pid)
+    assert auction.status == :closed
+    assert auction.result == :no_sale
+  end
+
   test "place_bid records a bid and get returns current state" do
     pid = start_english("srv1")
     assert {:ok, _} = Server.place_bid(pid, bidder: 1, amount: "10")

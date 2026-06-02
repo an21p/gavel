@@ -96,6 +96,58 @@ defmodule Gavel.Types.EnglishTest do
     auction.type.place_bid(auction, b, b.placed_at)
   end
 
+  describe "a bidder cannot pump their own price" do
+    test "the current leader bidding again does not raise the visible price" do
+      a = open_auction(%{min_increment: Decimal.new(10), start_price: Decimal.new(10)})
+      {:ok, a, _} = bid(a, 1, "50")
+      before = Helpers.highest(a.bids).amount
+
+      {:ok, a, _} = bid(a, 1, "70", 1)
+      leader = Helpers.highest(a.bids)
+
+      assert leader.bidder == 1
+      assert Decimal.equal?(leader.amount, before)
+      assert length(a.bids) == 1
+    end
+
+    test "setting a max after a plain bid does not raise the visible price" do
+      a = open_auction(%{min_increment: Decimal.new(10), start_price: Decimal.new(10)})
+      {:ok, a, _} = bid(a, 1, "50")
+
+      {:ok, a, _} = proxy(a, 1, "300", 1)
+      leader = Helpers.highest(a.bids)
+
+      assert leader.bidder == 1
+      assert Decimal.equal?(leader.amount, Decimal.new(50))
+      assert Decimal.equal?(leader.max_amount, Decimal.new(300))
+      assert length(a.bids) == 1
+    end
+
+    test "a genuine rival still advances the price after the leader raised their own max" do
+      a = open_auction(%{min_increment: Decimal.new(10), start_price: Decimal.new(10)})
+      {:ok, a, _} = bid(a, 1, "50")
+      {:ok, a, _} = proxy(a, 1, "300", 1)
+      {:ok, a, _} = proxy(a, 2, "100", 2)
+
+      leader = Helpers.highest(a.bids)
+      runner = Enum.find(a.bids, &(&1.bidder == 2))
+
+      assert leader.bidder == 1
+      assert Decimal.equal?(leader.amount, Decimal.new(110))
+      assert Decimal.equal?(runner.amount, Decimal.new(100))
+    end
+
+    test "repeated bids by the same bidder keep a single standing entry" do
+      a = open_auction(%{min_increment: Decimal.new(10)})
+      {:ok, a, _} = bid(a, 1, "20")
+      {:ok, a, _} = bid(a, 1, "40", 1)
+      {:ok, a, _} = proxy(a, 1, "200", 2)
+
+      assert length(a.bids) == 1
+      assert hd(a.bids).bidder == 1
+    end
+  end
+
   describe "proxy/max bidding" do
     test "a lone proxy bidder leads at the starting amount, not their max" do
       a = open_auction(%{min_increment: Decimal.new(1), start_price: Decimal.new(10)})

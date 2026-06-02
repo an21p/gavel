@@ -111,7 +111,14 @@ defmodule Gavel.Types.English do
     with :ok <- Helpers.ensure_open(auction),
          :ok <- check_admissible(auction, bid) do
       prior = Helpers.highest(auction.bids)
-      auction = auction |> Auction.put_bid(bid) |> recompute_visible_amounts()
+      prior_visible = Map.new(auction.bids, &{&1.bidder, &1.amount})
+
+      auction =
+        auction
+        |> merge_bid(bid)
+        |> recompute_visible_amounts()
+        |> ratchet(prior_visible)
+
       {auction, extend_events} = Helpers.maybe_extend(auction, now)
 
       events =
@@ -220,6 +227,46 @@ defmodule Gavel.Types.English do
   defp base_amount(%Bid{amount: a}), do: a
   defp dec_min(a, b), do: if(Decimal.compare(a, b) == :lt, do: a, else: b)
   defp dec_max(a, b), do: if(Decimal.compare(a, b) == :gt, do: a, else: b)
+
+  # Each bidder holds at most one standing bid. A re-bid replaces the bidder's
+  # existing entry, keeping the higher ceiling (stored as max_amount) and the
+  # earlier placed_at so a bidder who committed first keeps tie-break priority.
+  # This stops a bidder's own earlier bid from acting as a phantom runner-up in
+  # recompute_visible_amounts/1.
+  defp merge_bid(%Auction{} = auction, %Bid{bidder: bidder} = bid) do
+    case Enum.split_with(auction.bids, &(&1.bidder == bidder)) do
+      {[], _others} ->
+        Auction.put_bid(auction, bid)
+
+      {[existing], others} ->
+        merged = %{
+          bid
+          | max_amount: dec_max(ceiling(existing), ceiling(bid)),
+            placed_at: earliest(existing.placed_at, bid.placed_at)
+        }
+
+        %{auction | bids: others ++ [merged]}
+    end
+  end
+
+  # A bidder's own action must never lower their visible amount. After recompute,
+  # floor each bidder at the visible amount they held before this bid (first-time
+  # bidders have no prior amount). With merge_bid/2 this means a leader raising
+  # their own max neither pumps nor drops their price — only a competing bidder
+  # can move it.
+  defp ratchet(%Auction{bids: bids} = auction, prior_visible) do
+    bids =
+      Enum.map(bids, fn %Bid{bidder: bidder, amount: amount} = b ->
+        case Map.get(prior_visible, bidder) do
+          nil -> b
+          prev -> %{b | amount: dec_max(amount, prev)}
+        end
+      end)
+
+    %{auction | bids: bids}
+  end
+
+  defp earliest(a, b), do: if(DateTime.compare(a, b) == :gt, do: b, else: a)
 
   defp current_amount(auction) do
     case Helpers.highest(auction.bids) do

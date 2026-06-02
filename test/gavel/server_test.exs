@@ -35,13 +35,16 @@ defmodule Gavel.ServerTest do
   test "a Dutch clock that reaches the floor with no taker resolves to no_sale" do
     pid = start_dutch("srv_dutch_floor")
 
-    # Clock: 100 -> 50 (floor, one tick) -> 50 (stalled tick closes). At 20ms a
-    # tick, this is well settled within 300ms.
+    # start_price=100, decrement=50, floor=50: one tick drops from 100 → floor,
+    # and tick/2 closes immediately at the floor. At 20 ms/tick this is settled
+    # well within 300 ms.
     Process.sleep(300)
 
     auction = Server.get(pid)
     assert auction.status == :closed
     assert auction.result == :no_sale
+
+    GenServer.stop(pid)
   end
 
   test "place_bid records a bid and get returns current state" do

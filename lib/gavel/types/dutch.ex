@@ -5,7 +5,7 @@ defmodule Gavel.Types.Dutch do
 
   Unlike ascending auctions there is no competitive bidding — the first
   acceptance closes the lot. If the clock reaches the floor price and no one
-  has accepted, `resolve/2` records `:no_sale`.
+  has accepted, `tick/2` closes the lot immediately and records `:no_sale`.
 
   ## Config keys
 
@@ -25,15 +25,17 @@ defmodule Gavel.Types.Dutch do
   3. Drive the clock with repeated `tick/2` calls (e.g. on a timer).
   4. A participant calls `place_bid/3` at any point to accept the current price.
      The auction closes immediately on acceptance.
-  5. If the auction is still open after the clock reaches the floor, call
-     `resolve/2` to record `:no_sale`.
+  5. If the clock reaches the floor with no acceptance, `tick/2` closes the
+     auction in that same tick and records `:no_sale` — the floor is a hard
+     no-sale and is never an acceptable price. (`resolve/2` remains an
+     idempotent safety net for the close timer / manual close.)
 
   ## Events emitted
 
   | Event | When |
   |-------|------|
   | `{:price_dropped, %{price: price}}` | Each `tick/2` |
-  | `{:closed, %{result: result}}` | On `place_bid/3` acceptance or `resolve/2` |
+  | `{:closed, %{result: result}}` | On `place_bid/3` acceptance, the floor-reaching `tick/2`, or `resolve/2` |
 
   ## Example
 
@@ -196,6 +198,8 @@ defmodule Gavel.Types.Dutch do
 
   Returns `{:ok, closed_auction, events}`.
   """
+  # tick/2 now auto-closes at the floor; resolve/2 is an idempotent safety net
+  # for the :close timer and Gavel.Server.close/1.
   def resolve(%Auction{result: nil} = auction, _now) do
     {:ok, %{auction | status: :closed, result: :no_sale}, [{:closed, %{result: :no_sale}}]}
   end

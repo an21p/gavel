@@ -117,7 +117,7 @@ defmodule Gavel.Types.English do
         auction
         |> merge_bid(bid)
         |> recompute_visible_amounts()
-        |> ratchet(prior_visible)
+        |> ratchet(prior_visible, bid.bidder)
 
       {auction, extend_events} = Helpers.maybe_extend(auction, now)
 
@@ -159,7 +159,9 @@ defmodule Gavel.Types.English do
   end
 
   # A bid is admissible if its *ceiling* (max_amount or amount) can beat the
-  # current leader by the increment.
+  # current leader by the increment. A re-bid by the current leader passes this
+  # check against their own visible price; that is intentional — merge_bid/2 +
+  # ratchet/3 then update only their ceiling, never their visible price.
   defp check_admissible(auction, bid) do
     ceiling = bid.max_amount || bid.amount
     current = current_amount(auction)
@@ -249,18 +251,23 @@ defmodule Gavel.Types.English do
     end
   end
 
-  # A bidder's own action must never lower their visible amount. After recompute,
-  # floor each bidder at the visible amount they held before this bid (first-time
-  # bidders have no prior amount). With merge_bid/2 this means a leader raising
-  # their own max neither pumps nor drops their price — only a competing bidder
-  # can move it.
-  defp ratchet(%Auction{bids: bids} = auction, prior_visible) do
+  # The acting bidder's own action must never lower their visible amount. After
+  # recompute, floor only the acting bidder at the visible amount they held
+  # before this bid (a first-time bidder has no prior amount). Combined with
+  # merge_bid/2 this means a leader raising their own max neither pumps nor drops
+  # their price. Other bidders' amounts are left to recompute — only a competing
+  # bid can move them.
+  defp ratchet(%Auction{bids: bids} = auction, prior_visible, acting_bidder) do
     bids =
-      Enum.map(bids, fn %Bid{bidder: bidder, amount: amount} = b ->
-        case Map.get(prior_visible, bidder) do
-          nil -> b
-          prev -> %{b | amount: dec_max(amount, prev)}
-        end
+      Enum.map(bids, fn
+        %Bid{bidder: ^acting_bidder, amount: amount} = b ->
+          case Map.get(prior_visible, acting_bidder) do
+            nil -> b
+            prev -> %{b | amount: dec_max(amount, prev)}
+          end
+
+        b ->
+          b
       end)
 
     %{auction | bids: bids}

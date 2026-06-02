@@ -131,17 +131,39 @@ defmodule Gavel.Types.Dutch do
   @doc """
   Advances the clock by subtracting `:decrement` from the current price.
 
-  The price is clamped to `:floor_price` — it will never go below it.
-  Emits `{:price_dropped, %{price: new_price}}`.
+  If the computed price is still above the floor, emits
+  `{:price_dropped, %{price: new_price}}` and keeps the auction open.
+
+  If the computed price reaches or passes the floor, the auction closes
+  immediately as `:no_sale` (the clock never dwells at the floor). Emits
+  `{:closed, %{result: :no_sale}}` in that case.
+
+  Calling `tick/2` on an already-closed auction is a no-op — it returns the
+  auction unchanged with an empty event list.
 
   Returns `{:ok, updated_auction, events}`.
   """
+  def tick(%Auction{status: :closed} = auction, _now), do: {:ok, auction, []}
+
   def tick(%Auction{} = auction, _now) do
     floor = auction.config.floor_price
-    next = Decimal.sub(current_price(auction), auction.config.decrement)
-    next = if Decimal.compare(next, floor) == :lt, do: floor, else: next
-    auction = %{auction | extra: Map.put(auction.extra, :price, next)}
-    {:ok, auction, [{:price_dropped, %{price: next}}]}
+    raw = Decimal.sub(current_price(auction), auction.config.decrement)
+
+    if Decimal.compare(raw, floor) == :gt do
+      auction = %{auction | extra: Map.put(auction.extra, :price, raw)}
+      {:ok, auction, [{:price_dropped, %{price: raw}}]}
+    else
+      # Reached (or passed) the floor with no taker. The floor is a hard
+      # no-sale: the clock never dwells there, so close in this same tick.
+      auction = %{
+        auction
+        | extra: Map.put(auction.extra, :price, floor),
+          status: :closed,
+          result: :no_sale
+      }
+
+      {:ok, auction, [{:closed, %{result: :no_sale}}]}
+    end
   end
 
   @impl Gavel.Type

@@ -27,18 +27,30 @@ defmodule Gavel.Types.DutchTest do
     assert Decimal.equal?(dutch().extra.price, Decimal.new(100))
   end
 
-  test "tick lowers the price by decrement, not below floor" do
+  test "tick lowers the price by decrement while above the floor" do
     a = dutch()
-    {:ok, a, [{:price_dropped, _}]} = Dutch.tick(a, @now)
+    {:ok, a, [{:price_dropped, %{price: p}}]} = Dutch.tick(a, @now)
     assert Decimal.equal?(a.extra.price, Decimal.new(90))
+    assert Decimal.equal?(p, Decimal.new(90))
+    assert a.status == :open
+  end
 
+  test "the tick that reaches the floor closes the auction as no_sale" do
+    # 100 -> 90 -> 80 -> 70 -> 60, then the 5th tick would compute 50 (the floor)
+    # and must close immediately with no :price_dropped event.
     a =
-      Enum.reduce(1..10, a, fn _, acc ->
-        {:ok, acc, _} = Dutch.tick(acc, @now)
+      Enum.reduce(1..4, dutch(), fn _, acc ->
+        {:ok, acc, [{:price_dropped, _}]} = Dutch.tick(acc, @now)
         acc
       end)
 
-    assert Decimal.equal?(a.extra.price, Decimal.new(50))
+    assert Decimal.equal?(a.extra.price, Decimal.new(60))
+
+    {:ok, closed, events} = Dutch.tick(a, @now)
+    assert events == [{:closed, %{result: :no_sale}}]
+    assert closed.status == :closed
+    assert closed.result == :no_sale
+    assert Decimal.equal?(closed.extra.price, Decimal.new(50))
   end
 
   test "the first acceptance wins at the current clock price and closes" do

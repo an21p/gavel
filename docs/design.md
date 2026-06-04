@@ -17,7 +17,7 @@ shell on top, ETS for crash recovery.
 
 ## Goals
 
-- Support six auction formats with correct mechanism rules (see §3).
+- Support seven auction formats with correct mechanism rules (see §3).
 - Keep the core pure and deterministic so auction-theory invariants can be property-tested.
 - Keep the library dependency-light; do not force consumers into a database or a web framework.
 - Shape the sealed-auction state machine so commit-reveal can be added later without a rewrite.
@@ -36,7 +36,7 @@ Gavel              ← thin public API (start_auction, place_bid, set_max_bid, a
 ├─ Gavel.Core      ← PURE: structs + functions, no processes; only dependency is Decimal
 │   ├─ Gavel.Auction        (state struct + lifecycle)
 │   ├─ Gavel.Bid
-│   ├─ Gavel.Type           (behaviour the six types implement)
+│   ├─ Gavel.Type           (behaviour the seven types implement)
 │   └─ Gavel.Types.{English, Dutch, Vickrey, SealedFirstPrice, Reverse, Japanese}
 └─ Gavel.Runtime   ← OTP shell built ON the core
     ├─ Gavel.Server         (GenServer per auction: timers, Store persistence, PubSub)
@@ -63,7 +63,7 @@ time, tests inject fixed time.
 This is the same spirit as `jmbld_engine`'s pure `Rules.{Single,Multi,Coop}` modules. The core
 *returns* an events list from `place_bid`/`tick`/`resolve`; it never broadcasts anything itself.
 
-## 3. The six auction formats
+## 3. The seven auction formats
 
 | Type | Bids visible? | Winner | Price paid | Driver |
 |---|---|---|---|---|
@@ -125,7 +125,7 @@ The core returns an events list; the `Server` is the only thing that broadcasts.
 configured, the server broadcasts on topic `"auction:#{id}"`; if none is configured it silently no-ops,
 so core-only / PubSub-less consumers are never forced into the dependency (`phoenix_pubsub`).
 
-Event messages: `:bid_placed`, `:outbid`, `:price_dropped` (Dutch tick), `:extended` (anti-snipe),
+Event messages: `:bid_placed`, `:outbid`, `:price_dropped` (Dutch tick), `:extended` (anti-snipe), `:final_call` (Candle final call),
 `:closed` (with result), `:no_sale`.
 
 ### Persistence — ETS always-on + pluggable Store

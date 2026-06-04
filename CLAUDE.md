@@ -1,7 +1,7 @@
 # CLAUDE.md — Gavel
 
 A multi-format auction library for Elixir (English, Dutch, Vickrey, sealed
-first-price, reverse, Japanese). Hex-publishable, standalone repo.
+first-price, reverse, Japanese, candle). Hex-publishable, standalone repo.
 
 ## Architecture
 

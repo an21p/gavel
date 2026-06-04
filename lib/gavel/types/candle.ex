@@ -84,7 +84,8 @@ defmodule Gavel.Types.Candle do
   Requires a `DateTime` `:notice_at` and an integer `:max_delay`. `:min_delay`
   is optional (default `0`). Both delays must be non-negative and
   `min_delay <= max_delay`. Returns `:ok` or one of `:missing_notice_at`,
-  `:missing_max_delay`, `:negative_delay`, `:min_delay_above_max`.
+  `:missing_max_delay`, `:negative_delay`, `:min_delay_above_max`. A
+  non-integer `:min_delay` is also reported as `:negative_delay`.
   """
   def validate_config(config) do
     min = Map.get(config, :min_delay, 0)

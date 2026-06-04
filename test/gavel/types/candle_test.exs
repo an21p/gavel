@@ -55,6 +55,10 @@ defmodule Gavel.Types.CandleTest do
       assert {:error, :negative_delay} = Candle.validate_config(valid_config(%{min_delay: -1}))
     end
 
+    test "rejects a non-integer min_delay" do
+      assert {:error, :negative_delay} = Candle.validate_config(valid_config(%{min_delay: "5"}))
+    end
+
     test "rejects min_delay greater than max_delay" do
       assert {:error, :min_delay_above_max} =
                Candle.validate_config(valid_config(%{min_delay: 40, max_delay: 30}))

@@ -110,4 +110,52 @@ defmodule Gavel.Types.CandleTest do
       assert a.extra.secret_close == @notice
     end
   end
+
+  describe "resolve/2" do
+    test "sells to the highest bidder at their own bid and reveals closed_at" do
+      a = open_auction()
+      {:ok, a, _} = Candle.on_notice(a, 10, @now)
+      {:ok, a, _} = bid(a, 1, "10", 1)
+      {:ok, a, _} = bid(a, 2, "20", 2)
+      {:ok, a, events} = Candle.resolve(a, @now)
+
+      assert a.status == :closed
+      assert {:sold, 2, price} = a.result
+      assert Decimal.equal?(price, Decimal.new(20))
+      assert [{:closed, %{result: {:sold, 2, _}, closed_at: closed_at}}] = events
+      assert closed_at == DateTime.add(@notice, 10, :second)
+    end
+
+    test "with no bids the result is :no_sale" do
+      {:ok, a, [{:closed, %{result: :no_sale}}]} = Candle.resolve(open_auction(), @now)
+      assert a.result == :no_sale
+    end
+
+    test "a top bid below the reserve yields :no_sale" do
+      a = open_auction(%{reserve_price: Decimal.new(50)})
+      {:ok, a, _} = bid(a, 1, "20")
+      {:ok, a, _} = Candle.resolve(a, @now)
+      assert a.result == :no_sale
+    end
+
+    property "the winner is always the highest accepted bid; ties go to the earliest" do
+      check all(pairs <- Generators.bid_pairs()) do
+        a = open_auction()
+
+        a =
+          pairs
+          |> Enum.with_index()
+          |> Enum.reduce(a, fn {{bidder, amount}, i}, acc ->
+            b = Bid.new(bidder: bidder, amount: amount, placed_at: DateTime.add(@now, i, :second))
+            Auction.put_bid(acc, b)
+          end)
+
+        {:ok, a, _} = Candle.resolve(a, @now)
+        top = a.bids |> Helpers.ranked_desc() |> hd()
+        assert {:sold, winner, price} = a.result
+        assert winner == top.bidder
+        assert Decimal.equal?(price, top.amount)
+      end
+    end
+  end
 end

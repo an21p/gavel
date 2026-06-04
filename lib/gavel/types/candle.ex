@@ -151,5 +151,35 @@ defmodule Gavel.Types.Candle do
     {:ok, auction, events}
   end
 
+  @impl true
+  @doc """
+  Closes the auction: the highest standing bid wins if it clears the reserve.
+
+  Every bid in `auction.bids` was accepted before the hidden close (enforced by
+  `place_bid/3`), so resolution is simply the highest bid meeting the reserve —
+  the same rule English uses. Reveals the actual close time as `:closed_at` in
+  the event. Returns `:no_sale` when there are no bids or the top bid is below
+  the reserve.
+  """
+  def resolve(%Auction{} = auction, _now) do
+    result =
+      case Helpers.highest(auction.bids) do
+        nil ->
+          :no_sale
+
+        %Bid{} = top ->
+          if Helpers.clears_reserve?(top.amount, Helpers.reserve(auction)) do
+            {:sold, top.bidder, top.amount}
+          else
+            :no_sale
+          end
+      end
+
+    closed_at = Map.get(auction.extra, :secret_close)
+
+    {:ok, %{auction | status: :closed, result: result},
+     [{:closed, %{result: result, closed_at: closed_at}}]}
+  end
+
   defp secret_close(%Auction{extra: extra}), do: Map.get(extra, :secret_close)
 end

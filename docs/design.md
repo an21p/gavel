@@ -17,7 +17,7 @@ shell on top, ETS for crash recovery.
 
 ## Goals
 
-- Support six auction formats with correct mechanism rules (see §3).
+- Support seven auction formats with correct mechanism rules (see §3).
 - Keep the core pure and deterministic so auction-theory invariants can be property-tested.
 - Keep the library dependency-light; do not force consumers into a database or a web framework.
 - Shape the sealed-auction state machine so commit-reveal can be added later without a rewrite.
@@ -36,7 +36,7 @@ Gavel              ← thin public API (start_auction, place_bid, set_max_bid, a
 ├─ Gavel.Core      ← PURE: structs + functions, no processes; only dependency is Decimal
 │   ├─ Gavel.Auction        (state struct + lifecycle)
 │   ├─ Gavel.Bid
-│   ├─ Gavel.Type           (behaviour the six types implement)
+│   ├─ Gavel.Type           (behaviour the seven types implement)
 │   └─ Gavel.Types.{English, Dutch, Vickrey, SealedFirstPrice, Reverse, Japanese}
 └─ Gavel.Runtime   ← OTP shell built ON the core
     ├─ Gavel.Server         (GenServer per auction: timers, Store persistence, PubSub)
@@ -63,7 +63,7 @@ time, tests inject fixed time.
 This is the same spirit as `jmbld_engine`'s pure `Rules.{Single,Multi,Coop}` modules. The core
 *returns* an events list from `place_bid`/`tick`/`resolve`; it never broadcasts anything itself.
 
-## 3. The six auction formats
+## 3. The seven auction formats
 
 | Type | Bids visible? | Winner | Price paid | Driver |
 |---|---|---|---|---|
@@ -73,10 +73,17 @@ This is the same spirit as `jmbld_engine`'s pure `Rules.{Single,Multi,Coop}` mod
 | **SealedFirstPrice** | hidden till close | highest | own bid | sealed → resolve |
 | **Reverse** | hidden till close | **lowest** | own bid | sealed procurement |
 | **Japanese** | yes | last standing | exit price of 2nd-last drop-out | ascending clock + `drop_out` |
+| **Candle** | yes | highest | own bid | English bidding + public final-call, then a hidden random close |
 
 `SealedFirstPrice` was not in the originally named list but is folded in: Vickrey already requires the
 full sealed pipeline (collect hidden bids → reveal at close → pick winner), so first-price sealed is a
 payment-rule variant that comes nearly free.
+
+**Candle:** an English auction with a two-stage random ending. A public `notice_at`
+broadcasts a `:final_call`; the lot then closes at a hidden `notice_at + delay`
+(`delay` uniform in `[min_delay, max_delay]`). All bids during the burn-down count;
+the format is snipe-proof yet transparent. Randomness is injected into the pure
+core via the optional `on_notice/3` callback, keeping resolution deterministic.
 
 **Commit-reveal forward-compatibility:** the sealed types (Vickrey, SealedFirstPrice, Reverse) carry a
 `phase: :bidding | :revealing | :resolved` field. In v1's trusted-store mode the `:revealing` phase is
@@ -118,7 +125,7 @@ The core returns an events list; the `Server` is the only thing that broadcasts.
 configured, the server broadcasts on topic `"auction:#{id}"`; if none is configured it silently no-ops,
 so core-only / PubSub-less consumers are never forced into the dependency (`phoenix_pubsub`).
 
-Event messages: `:bid_placed`, `:outbid`, `:price_dropped` (Dutch tick), `:extended` (anti-snipe),
+Event messages: `:bid_placed`, `:outbid`, `:price_dropped` (Dutch tick), `:extended` (anti-snipe), `:final_call` (Candle final call),
 `:closed` (with result), `:no_sale`.
 
 ### Persistence — ETS always-on + pluggable Store

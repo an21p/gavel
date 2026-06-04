@@ -92,5 +92,18 @@ defmodule Gavel.Type do
   @callback drop_out(Auction.t(), bidder :: term(), now :: DateTime.t()) ::
               {:ok, Auction.t(), events()} | {:error, term()}
 
-  @optional_callbacks drop_out: 3
+  @doc """
+  Fire the "final call" and fix the auction's hidden close time.
+
+  Called once by the runtime when the public `:notice_at` is reached. The
+  random burn-down delay is *injected* as `delay_seconds` (the runtime supplies
+  `:rand`; tests pass a fixed integer), keeping the core deterministic — exactly
+  like the injected `now` argument elsewhere. The callback records the hidden
+  close in `auction.extra.secret_close` and emits a `:final_call` event. Only
+  `Gavel.Types.Candle` implements this.
+  """
+  @callback on_notice(Auction.t(), delay_seconds :: non_neg_integer(), now :: DateTime.t()) ::
+              {:ok, Auction.t(), events()}
+
+  @optional_callbacks drop_out: 3, on_notice: 3
 end

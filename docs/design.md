@@ -73,10 +73,17 @@ This is the same spirit as `jmbld_engine`'s pure `Rules.{Single,Multi,Coop}` mod
 | **SealedFirstPrice** | hidden till close | highest | own bid | sealed → resolve |
 | **Reverse** | hidden till close | **lowest** | own bid | sealed procurement |
 | **Japanese** | yes | last standing | exit price of 2nd-last drop-out | ascending clock + `drop_out` |
+| **Candle** | yes | highest | own bid | English bidding + public final-call, then a hidden random close |
 
 `SealedFirstPrice` was not in the originally named list but is folded in: Vickrey already requires the
 full sealed pipeline (collect hidden bids → reveal at close → pick winner), so first-price sealed is a
 payment-rule variant that comes nearly free.
+
+**Candle:** an English auction with a two-stage random ending. A public `notice_at`
+broadcasts a `:final_call`; the lot then closes at a hidden `notice_at + delay`
+(`delay` uniform in `[min_delay, max_delay]`). All bids during the burn-down count;
+the format is snipe-proof yet transparent. Randomness is injected into the pure
+core via the optional `on_notice/3` callback, keeping resolution deterministic.
 
 **Commit-reveal forward-compatibility:** the sealed types (Vickrey, SealedFirstPrice, Reverse) carry a
 `phase: :bidding | :revealing | :resolved` field. In v1's trusted-store mode the `:revealing` phase is

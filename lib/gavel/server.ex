@@ -29,8 +29,13 @@ defmodule Gavel.Server do
     auction config. Re-armed after each tick via `schedule_tick/1`.
   - **`:close`** — armed whenever `auction.closes_at` is a `%DateTime{}`. Fires
     `auction.type.resolve/2` at the scheduled wall-clock time.
+  - **`:notice`** — fires the public "final call" for `Gavel.Types.Candle` auctions.
+    Armed when `auction.config` has a `:notice_at` `%DateTime{}` and no hidden close
+    has been drawn yet. On firing it draws a random burn-down delay, calls the type's
+    `on_notice/3` to fix the hidden close (`extra.secret_close`), broadcasts
+    `:final_call`, and arms the `:close` timer for the hidden close time.
 
-  Both timers are cancelled immediately when the auction closes, regardless of
+  All timers are cancelled immediately when the auction closes, regardless of
   whether the close came from a player action, an explicit `close/1` call, or the
   `:close` timer itself.
 
@@ -44,11 +49,12 @@ defmodule Gavel.Server do
 
   Per-auction config keys consumed by `Gavel.Server` (set in `auction.config`):
 
-  | Key                 | Used for                                        |
-  |---------------------|-------------------------------------------------|
-  | `:tick_interval_ms` | Clock tick cadence in milliseconds              |
-  | `:closes_at`        | Auto-close `%DateTime{}` (also on the struct)   |
-  | `:anti_snipe`       | Passed through to the type for snipe handling   |
+  | Key                 | Used for                                                        |
+  |---------------------|-----------------------------------------------------------------|
+  | `:tick_interval_ms` | Clock tick cadence in milliseconds                              |
+  | `:closes_at`        | Auto-close `%DateTime{}` (also on the struct)                   |
+  | `:anti_snipe`       | Passed through to the type for snipe handling                   |
+  | `:notice_at`        | Candle final-call time; the server draws the hidden close from it |
 
   ## PubSub events
 

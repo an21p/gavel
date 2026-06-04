@@ -136,7 +136,11 @@ defmodule Gavel.Types.Candle do
   `notice_at`, not to when the timer happened to fire — but is accepted for
   callback-signature compatibility.
   """
-  def on_notice(%Auction{config: config, extra: extra} = auction, delay_seconds, %DateTime{} = _now)
+  def on_notice(
+        %Auction{config: config, extra: extra} = auction,
+        delay_seconds,
+        %DateTime{} = _now
+      )
       when is_integer(delay_seconds) and delay_seconds >= 0 do
     notice_at = Map.fetch!(config, :notice_at)
     secret_close = DateTime.add(notice_at, delay_seconds, :second)

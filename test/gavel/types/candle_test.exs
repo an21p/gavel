@@ -95,4 +95,19 @@ defmodule Gavel.Types.CandleTest do
       assert {:error, :auction_closed} = bid(a, 1, "10", 101)
     end
   end
+
+  describe "on_notice/3" do
+    test "sets secret_close to notice_at + delay and emits final_call" do
+      a = open_auction(%{max_delay: 30})
+      {:ok, a, events} = Candle.on_notice(a, 12, @now)
+      assert a.extra.secret_close == DateTime.add(@notice, 12, :second)
+      assert [{:final_call, %{notice_at: @notice, max_delay: 30}}] = events
+    end
+
+    test "a zero delay closes the window exactly at notice_at" do
+      a = open_auction()
+      {:ok, a, _} = Candle.on_notice(a, 0, @now)
+      assert a.extra.secret_close == @notice
+    end
+  end
 end

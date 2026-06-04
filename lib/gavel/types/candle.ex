@@ -125,5 +125,27 @@ defmodule Gavel.Types.Candle do
     end
   end
 
+  @impl true
+  @doc """
+  Fires the final call and fixes the hidden close at `notice_at + delay_seconds`.
+
+  `delay_seconds` is the injected random burn-down delay (the runtime draws it
+  with `:rand`; tests pass a fixed integer). Records the result in
+  `extra.secret_close` and emits `{:final_call, %{notice_at: t, max_delay: m}}`.
+  The `now` argument is unused — the close is anchored to the announced
+  `notice_at`, not to when the timer happened to fire — but is accepted for
+  callback-signature compatibility.
+  """
+  def on_notice(%Auction{config: config, extra: extra} = auction, delay_seconds, %DateTime{} = _now)
+      when is_integer(delay_seconds) and delay_seconds >= 0 do
+    notice_at = Map.fetch!(config, :notice_at)
+    secret_close = DateTime.add(notice_at, delay_seconds, :second)
+
+    auction = %{auction | extra: Map.put(extra, :secret_close, secret_close)}
+    events = [{:final_call, %{notice_at: notice_at, max_delay: Map.fetch!(config, :max_delay)}}]
+
+    {:ok, auction, events}
+  end
+
   defp secret_close(%Auction{extra: extra}), do: Map.get(extra, :secret_close)
 end

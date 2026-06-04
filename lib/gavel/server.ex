@@ -244,6 +244,15 @@ defmodule Gavel.Server do
 
   def handle_info(:tick, state), do: {:noreply, state}
 
+  def handle_info(:notice, %{auction: %{status: :open} = auction} = state) do
+    delay = draw_delay(auction.config)
+    {:ok, auction, events} = auction.type.on_notice(auction, delay, now())
+    state = commit(state, auction, events)
+    {:noreply, schedule_close(state)}
+  end
+
+  def handle_info(:notice, state), do: {:noreply, state}
+
   def handle_info(:close, %{auction: %{status: :closed}} = state), do: {:noreply, state}
 
   def handle_info(:close, %{auction: auction} = state) do
@@ -309,6 +318,7 @@ defmodule Gavel.Server do
   defp arm_timers(state) do
     state
     |> schedule_tick()
+    |> schedule_notice()
     |> schedule_close()
   end
 
@@ -325,13 +335,48 @@ defmodule Gavel.Server do
 
   defp schedule_tick(state), do: state
 
-  defp schedule_close(%{auction: %Auction{closes_at: %DateTime{} = closes_at}} = state) do
-    ms = max(DateTime.diff(closes_at, now(), :millisecond), 0)
-    ref = Process.send_after(self(), :close, ms)
-    put_in(state, [:timers, :close], ref)
+  # Candle: arm a one-shot timer to fire the public final-call at notice_at.
+  # Skipped once secret_close is set (already noticed), so it never re-fires
+  # after a crash/rehydrate.
+  defp schedule_notice(%{auction: %Auction{config: config, extra: extra, status: :open}} = state) do
+    case {Map.get(config, :notice_at), Map.get(extra, :secret_close)} do
+      {%DateTime{} = notice_at, nil} ->
+        ms = max(DateTime.diff(notice_at, now(), :millisecond), 0)
+        ref = Process.send_after(self(), :notice, ms)
+        put_in(state, [:timers, :notice], ref)
+
+      _ ->
+        state
+    end
   end
 
-  defp schedule_close(state), do: state
+  defp schedule_notice(state), do: state
+
+  defp schedule_close(%{auction: %Auction{} = auction} = state) do
+    case effective_close(auction) do
+      %DateTime{} = closes_at ->
+        ms = max(DateTime.diff(closes_at, now(), :millisecond), 0)
+        ref = Process.send_after(self(), :close, ms)
+        put_in(state, [:timers, :close], ref)
+
+      _ ->
+        state
+    end
+  end
+
+  # A candle's real close lives hidden in extra.secret_close (set at notice).
+  # Every other format uses the public closes_at field.
+  defp effective_close(%Auction{extra: extra, closes_at: closes_at}) do
+    Map.get(extra, :secret_close) || closes_at
+  end
+
+  # Uniform integer in [min_delay, max_delay]. :rand.uniform(n) returns 1..n,
+  # so this yields min..max inclusive and collapses to min when min == max.
+  defp draw_delay(config) do
+    min = Map.get(config, :min_delay, 0)
+    max = Map.fetch!(config, :max_delay)
+    min + :rand.uniform(max - min + 1) - 1
+  end
 
   defp broadcast(id, event) do
     case Application.get_env(:gavel, :pubsub) do

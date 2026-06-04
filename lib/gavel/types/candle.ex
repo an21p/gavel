@@ -100,4 +100,30 @@ defmodule Gavel.Types.Candle do
       true -> :ok
     end
   end
+
+  @impl true
+  @doc """
+  Places a public bid using English's rules.
+
+  Before the `:final_call` fires there is no hidden close and bidding is exactly
+  English. Once `extra.secret_close` is set, a bid whose `now` is at or after
+  that hidden close is rejected with `{:error, :auction_closed}` — this closes
+  the race between the runtime's close timer and a late bid. Otherwise the bid
+  is delegated to `Gavel.Types.English.place_bid/3`.
+  """
+  def place_bid(%Auction{} = auction, %Bid{} = bid, %DateTime{} = now) do
+    case secret_close(auction) do
+      %DateTime{} = close ->
+        if DateTime.compare(now, close) == :lt do
+          English.place_bid(auction, bid, now)
+        else
+          {:error, :auction_closed}
+        end
+
+      nil ->
+        English.place_bid(auction, bid, now)
+    end
+  end
+
+  defp secret_close(%Auction{extra: extra}), do: Map.get(extra, :secret_close)
 end

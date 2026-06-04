@@ -64,4 +64,35 @@ defmodule Gavel.Types.CandleTest do
                Candle.validate_config(valid_config(%{min_delay: 40, max_delay: 30}))
     end
   end
+
+  describe "place_bid/3" do
+    defp bid(auction, bidder, amount, secs \\ 0) do
+      b = Bid.new(bidder: bidder, amount: amount, placed_at: DateTime.add(@now, secs, :second))
+      auction.type.place_bid(auction, b, b.placed_at)
+    end
+
+    test "delegates to English: first bid accepted, then a higher bid outbids" do
+      {:ok, a, _} = bid(open_auction(), 1, "10")
+      {:ok, a, events} = bid(a, 2, "12", 1)
+      assert [{:bid_placed, _}, {:outbid, %{bidder: 1}}] = events
+      assert Decimal.equal?(Helpers.highest(a.bids).amount, Decimal.new(12))
+    end
+
+    test "delegates to English: min_increment is enforced" do
+      a = open_auction(%{min_increment: Decimal.new(5)})
+      {:ok, a, _} = bid(a, 1, "10")
+      assert {:error, :below_min_increment} = bid(a, 2, "12", 1)
+    end
+
+    test "accepts bids before the hidden close" do
+      a = %{open_auction() | extra: %{secret_close: DateTime.add(@now, 100, :second)}}
+      assert {:ok, _a, [{:bid_placed, _} | _]} = bid(a, 1, "10", 10)
+    end
+
+    test "rejects bids at or after the hidden close" do
+      a = %{open_auction() | extra: %{secret_close: DateTime.add(@now, 100, :second)}}
+      assert {:error, :auction_closed} = bid(a, 1, "10", 100)
+      assert {:error, :auction_closed} = bid(a, 1, "10", 101)
+    end
+  end
 end
